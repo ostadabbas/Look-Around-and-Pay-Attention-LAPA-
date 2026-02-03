@@ -122,11 +122,6 @@ If you use this code in your research, please cite:
 
 This project is released under the MIT License. See the LICENSE file for details.
 
-## Acknowledgments
-
-- Northeastern University Computer Vision Lab
-- 3DV Conference organizers
-- TAP-3D dataset contributors
 
 ## Contact
 

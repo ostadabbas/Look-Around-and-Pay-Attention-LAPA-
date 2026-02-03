@@ -8,19 +8,19 @@
 
 ---
 
-## 📖 Overview
+## Overview
 
 LAPA is a novel end-to-end transformer-based architecture for multi-camera point tracking. Unlike traditional approaches that separate detection, association, and tracking into distinct stages, LAPA jointly reasons across views and time through attention mechanisms.
 
 **For visualizations, results, and supplementary materials, visit our [Project Page](https://ostadabbas.github.io/lapa.github.io/)**
 
-## 👥 Authors
+## Authors
 
 Bishoy Galoaa, Xiangyu Bai, Shayda Moezzi, Utsav Nandi, Sai Siddhartha Vivek Dhir Rangoju, Somaieh Amraee, Sarah Ostadabbas
 
 **Northeastern University**
 
-## 🚀 Installation
+## Installation
 
 ```bash
 # Clone this repository
@@ -31,7 +31,7 @@ cd Look-Around-and-Pay-Attention-LAPA-
 pip install -r requirements.txt
 ```
 
-## 📁 Repository Structure
+## Repository Structure
 
 ### Core Scripts
 - `run_lapa_pipeline.py` - Main LAPA tracking pipeline
@@ -58,7 +58,7 @@ pip install -r requirements.txt
 - `download_tap3d_all_v1.py` - Download TAP-3D dataset
 - `lapa/` - Core LAPA implementation package
 
-## 🏃‍♂️ Quick Start
+## Quick Start
 
 ### Basic Usage
 ```bash
@@ -90,7 +90,7 @@ python run_ablation_study.py --output_dir results/ablation
 python evaluate_ablation.py --model_path path/to/model.pth --test_data path/to/test/data
 ```
 
-## 🎯 Key Features
+## Key Features
 
 - **Unified Architecture**: End-to-end transformer-based approach
 - **Cross-View Attention**: Geometric-aware attention mechanisms
@@ -98,14 +98,14 @@ python evaluate_ablation.py --model_path path/to/model.pth --test_data path/to/t
 - **Occlusion Handling**: Robust tracking through occlusions
 - **Multi-Camera Support**: Works with arbitrary camera configurations
 
-## 📊 Datasets
+## Datasets
 
 This implementation supports the TAP-3D dataset. Use the download script:
 ```bash
 python download_tap3d_all_v1.py
 ```
 
-## 🤝 Citation
+## Citation
 
 If you use this code in your research, please cite:
 
@@ -118,17 +118,17 @@ If you use this code in your research, please cite:
 }
 ```
 
-## 📄 License
+## License
 
 This project is released under the MIT License. See the LICENSE file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Northeastern University Computer Vision Lab
 - 3DV Conference organizers
 - TAP-3D dataset contributors
 
-## 📧 Contact
+## Contact
 
 For questions or issues, please open an issue on GitHub.
 

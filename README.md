@@ -31,6 +31,10 @@ cd Look-Around-and-Pay-Attention-LAPA-
 pip install -r requirements.txt
 ```
 
+## Pretrained Weights
+
+**Coming Soon** - Pretrained model weights will be released shortly.
+
 ## Repository Structure
 
 ### Core Scripts

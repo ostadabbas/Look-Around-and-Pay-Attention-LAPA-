@@ -5,7 +5,7 @@
 [![Project Page](https://img.shields.io/badge/Project-Page-blue?style=for-the-badge&logo=github)](https://ostadabbas.github.io/lapa.github.io/)
 [![arXiv](https://img.shields.io/badge/arXiv-2512.04213-b31b1b?style=for-the-badge&logo=arxiv)](https://arxiv.org/abs/2512.04213)
 [![3DV](https://img.shields.io/badge/3DV-Oral%20Presentation-green?style=for-the-badge)](https://ostadabbas.github.io/lapa.github.io/)
-[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Pretrained%20Weights-yellow?style=for-the-badge)](https://huggingface.co/bishoygaloaa/lapa-tapvid3d-mc)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-LAPA-yellow?style=for-the-badge)](https://huggingface.co/collections/bishoygaloaa/lapa-6a79dcf4bbedf556ad7da964)
 [![GitHub Release](https://img.shields.io/badge/GitHub-Download%20Weights-black?style=for-the-badge&logo=github)](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-weights)
 
 ---
@@ -30,22 +30,24 @@ pip install -r requirements.txt
 
 ## Pretrained Weights
 
-| Dataset | Hugging Face | GitHub Release |
-|---------|--------------|----------------|
-| TAPVid-3D-MC | [bishoygaloaa/lapa-tapvid3d-mc](https://huggingface.co/bishoygaloaa/lapa-tapvid3d-mc) | [lapa-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-weights) (`lapa.pt`) |
-| PointOdyssey-MC | Coming soon (`bishoygaloaa/lapa-pointodyssey-mc`) | Coming soon |
+Main hub: [`bishoygaloaa/LAPA`](https://huggingface.co/bishoygaloaa/LAPA) · [Collection](https://huggingface.co/collections/bishoygaloaa/lapa-6a79dcf4bbedf556ad7da964)
+
+| Model | Hugging Face | GitHub Release |
+|-------|--------------|----------------|
+| LAPA TAPVid-3D-MC | [bishoygaloaa/LAPA-TAPVid-3D-MC](https://huggingface.co/bishoygaloaa/LAPA-TAPVid-3D-MC) | [lapa-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-weights) (`lapa.pt`) |
+| LAPA PointOdyssey-MC | [bishoygaloaa/LAPA-PointOdyssey-MC](https://huggingface.co/bishoygaloaa/LAPA-PointOdyssey-MC) *(weights uploading when training finishes)* | Coming soon |
 
 **Direct download (TAPVid-3D-MC):**
-- Hugging Face: https://huggingface.co/bishoygaloaa/lapa-tapvid3d-mc/resolve/main/lapa.pt
+- Hugging Face: https://huggingface.co/bishoygaloaa/LAPA-TAPVid-3D-MC/resolve/main/lapa.pt
 - GitHub: https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/download/lapa-weights/lapa.pt
 
 ```bash
 # Hugging Face CLI
-hf download bishoygaloaa/lapa-tapvid3d-mc lapa.pt --local-dir checkpoints/lapa
+hf download bishoygaloaa/LAPA-TAPVid-3D-MC lapa.pt --local-dir checkpoints/lapa
 
 # Or Python
 from huggingface_hub import hf_hub_download
-ckpt = hf_hub_download("bishoygaloaa/lapa-tapvid3d-mc", "lapa.pt")
+ckpt = hf_hub_download("bishoygaloaa/LAPA-TAPVid-3D-MC", "lapa.pt")
 ```
 
 ## Quick Start

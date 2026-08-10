@@ -36,6 +36,7 @@ Main hub: [`bishoygaloaa/LAPA`](https://huggingface.co/bishoygaloaa/LAPA) · [Co
 |-------|--------------|----------------|
 | LAPA TAPVid-3D-MC | [bishoygaloaa/LAPA-TAPVid-3D-MC](https://huggingface.co/bishoygaloaa/LAPA-TAPVid-3D-MC) | [lapa-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-weights) (`lapa.pt`) |
 | LAPA PointOdyssey-MC | [bishoygaloaa/LAPA-PointOdyssey-MC](https://huggingface.co/bishoygaloaa/LAPA-PointOdyssey-MC) *(weights uploading when training finishes)* | Coming soon |
+| LAPA Joint | [bishoygaloaa/LAPA-Joint](https://huggingface.co/bishoygaloaa/LAPA-Joint) *(scheduled after PointOdyssey)* | Coming soon |
 
 **Direct download (TAPVid-3D-MC):**
 - Hugging Face: https://huggingface.co/bishoygaloaa/LAPA-TAPVid-3D-MC/resolve/main/lapa.pt
@@ -94,7 +95,9 @@ python -m lapa.features.precompute --device cuda:0 --max_points 256
 python train_lapa.py --device cuda:0 --output_dir checkpoints/lapa --epochs 50
 
 # 4× GPU (one job per V100)
-bash scripts/launch_4gpu_train.sh
+bash scripts/launch_4gpu_train.sh          # TAPVid-3D-MC
+bash scripts/launch_4gpu_train_odyssey.sh  # PointOdyssey-MC
+bash scripts/launch_4gpu_train_joint.sh    # joint (both datasets)
 ```
 
 Paper recipe: AdamW lr=1e-4, wd=1e-5, cosine + 5-epoch warmup,  

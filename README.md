@@ -5,14 +5,14 @@
 [![Project Page](https://img.shields.io/badge/Project-Page-blue?style=for-the-badge&logo=github)](https://ostadabbas.github.io/lapa.github.io/)
 [![arXiv](https://img.shields.io/badge/arXiv-2512.04213-b31b1b?style=for-the-badge&logo=arxiv)](https://arxiv.org/abs/2512.04213)
 [![3DV](https://img.shields.io/badge/3DV-Oral%20Presentation-green?style=for-the-badge)](https://ostadabbas.github.io/lapa.github.io/)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Pretrained%20Weights-yellow?style=for-the-badge)](https://huggingface.co/bishoygaloaa/lapa-tapvid3d-mc)
+[![GitHub Release](https://img.shields.io/badge/GitHub-Download%20Weights-black?style=for-the-badge&logo=github)](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-weights)
 
 ---
 
 ## Overview
 
-LAPA is a novel end-to-end transformer-based architecture for multi-camera point tracking. Unlike traditional approaches that separate detection, association, and tracking into distinct stages, LAPA jointly reasons across views and time through attention mechanisms.
-
-**For visualizations, results, and supplementary materials, visit our [Project Page](https://ostadabbas.github.io/lapa.github.io/)**
+LAPA is an end-to-end transformer-based architecture for multi-camera point tracking. It jointly reasons across views and time through distance-based volumetric attention, producing consistent 3D trajectories without classical triangulation.
 
 ## Authors
 
@@ -23,95 +23,98 @@ Bishoy Galoaa, Xiangyu Bai, Shayda Moezzi, Utsav Nandi, Sai Siddhartha Vivek Dhi
 ## Installation
 
 ```bash
-# Clone this repository
 git clone https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-.git
 cd Look-Around-and-Pay-Attention-LAPA-
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
 ## Pretrained Weights
 
-**Coming Soon** - Pretrained model weights will be released shortly.
+| Dataset | Hugging Face | GitHub Release |
+|---------|--------------|----------------|
+| TAPVid-3D-MC | [bishoygaloaa/lapa-tapvid3d-mc](https://huggingface.co/bishoygaloaa/lapa-tapvid3d-mc) | [lapa-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-weights) (`lapa.pt`) |
+| PointOdyssey-MC | Coming soon (`bishoygaloaa/lapa-pointodyssey-mc`) | Coming soon |
 
-## Repository Structure
+**Direct download (TAPVid-3D-MC):**
+- Hugging Face: https://huggingface.co/bishoygaloaa/lapa-tapvid3d-mc/resolve/main/lapa.pt
+- GitHub: https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/download/lapa-weights/lapa.pt
 
-### Core Scripts
-- `run_lapa_pipeline.py` - Main LAPA tracking pipeline
-- `run_lapa_refinement.py` - Track refinement module
-- `run_optimized_pipeline.py` - Optimized version of the pipeline
-- `run_all_sequences.py` - Batch processing for multiple sequences
+```bash
+# Hugging Face CLI
+hf download bishoygaloaa/lapa-tapvid3d-mc lapa.pt --local-dir checkpoints/lapa
 
-### Training Scripts
-- `train_multi_sequence_tracker.py` - Train the multi-sequence tracker
-- `train_refinement.py` - Train the refinement module
-- `train_with_attention.py` - Train with attention mechanisms
-
-### Evaluation & Analysis
-- `evaluate_ablation.py` - Ablation study evaluation
-- `run_ablation_study.py` - Run comprehensive ablation studies
-
-### Visualization Tools
-- `visualize_attention_weights.py` - Visualize attention weights
-- `visualize_trained_attention.py` - Visualize trained attention patterns
-- `visualize_refinement_tracks.py` - Visualize refined tracks
-- `visualize_fixed_attention.py` - Fixed attention visualization
-
-### Data & Utilities
-- `download_tap3d_all_v1.py` - Download TAP-3D dataset
-- `lapa/` - Core LAPA implementation package
+# Or Python
+from huggingface_hub import hf_hub_download
+ckpt = hf_hub_download("bishoygaloaa/lapa-tapvid3d-mc", "lapa.pt")
+```
 
 ## Quick Start
 
-### Basic Usage
+### Inference on a 3-camera scene
+
 ```bash
-# Run LAPA on a single sequence
-python run_lapa_pipeline.py --config configs/default.yaml --input_path /path/to/sequence
-
-# Run optimized pipeline
-python run_optimized_pipeline.py --sequence your_sequence_name
-
-# Run refinement
-python run_lapa_refinement.py --input_tracks tracks.pkl --output refined_tracks.pkl
+python inference_lapa.py \
+  --checkpoint checkpoints/lapa/best.pt \
+  --scene boxes --cameras 5 6 7 \
+  --feature_dir data/feature_cache \
+  --output outputs/inference_boxes.npz
 ```
 
-### Training
-```bash
-# Train the main tracker
-python train_multi_sequence_tracker.py --config configs/training.yaml
+### Evaluate
 
-# Train refinement module
-python train_refinement.py --pretrained_model path/to/main/model.pth
+```bash
+python evaluate_lapa.py \
+  --checkpoint checkpoints/lapa/best.pt \
+  --output outputs/eval_metrics.json
 ```
 
-### Evaluation
-```bash
-# Run ablation study
-python run_ablation_study.py --output_dir results/ablation
+## Data: TAPVid-3D-MC
 
-# Evaluate specific model
-python evaluate_ablation.py --model_path path/to/model.pth --test_data path/to/test/data
+```bash
+# 1) Download TAPVid-3D pstudio (minival) + Dynamic3DGaussians calibration/frames
+python scripts/download_data.py --output_dir ./data
+
+# 2) Full-eval annotations are at v1.0/pstudio (joined with D3G images by the
+#    helper in scripts/download_data.py / the session build script)
+
+# 3) Build multi-camera metadata + world tracks
+python -m lapa.data.mc_builder \
+  --npz_root ./data --d3g_root ./data/d3g/data --out_dir ./data/tapvid3d_mc
+
+# 4) Precompute DINOv2 features (and optional CoTracker tracks)
+python -m lapa.features.precompute --device cuda:0 --max_points 256
 ```
 
-## Key Features
+## Training
 
-- **Unified Architecture**: End-to-end transformer-based approach
-- **Cross-View Attention**: Geometric-aware attention mechanisms
-- **Differentiable Triangulation**: 3D point reconstruction
-- **Occlusion Handling**: Robust tracking through occlusions
-- **Multi-Camera Support**: Works with arbitrary camera configurations
-
-## Datasets
-
-This implementation supports the TAP-3D dataset. Use the download script:
 ```bash
-python download_tap3d_all_v1.py
+# Single GPU
+python train_lapa.py --device cuda:0 --output_dir checkpoints/lapa --epochs 50
+
+# 4× GPU (one job per V100)
+bash scripts/launch_4gpu_train.sh
 ```
+
+Paper recipe: AdamW lr=1e-4, wd=1e-5, cosine + 5-epoch warmup,  
+\(\mathcal{L}=1.0\mathcal{L}_{recon}+0.7\mathcal{L}_{proj}+0.8\mathcal{L}_{attn}\).
+
+## Repository Layout
+
+| Path | Purpose |
+|------|---------|
+| `lapa/models/lapa.py` | Paper method (volumetric attention + triangulation MLP) |
+| `lapa/data/mc_builder.py` | TAPVid-3D-MC construction + calibration gate |
+| `lapa/data/mc_dataset.py` | 3-camera triplet dataset |
+| `lapa/features/precompute.py` | DINOv2 (+ optional CoTracker) cache |
+| `lapa/losses.py` | Multi-objective loss |
+| `lapa/eval/metrics.py` | Official TAPVid-3D metrics |
+| `train_lapa.py` | Training entry point |
+| `evaluate_lapa.py` | Evaluation |
+| `inference_lapa.py` | Inference |
+
+Legacy prototype modules under `lapa/models/geometric_attention*.py` are kept for reference but are **not** used by the release pipeline.
 
 ## Citation
-
-If you use this code in your research, please cite:
 
 ```bibtex
 @article{lapa2025,
@@ -124,8 +127,7 @@ If you use this code in your research, please cite:
 
 ## License
 
-This project is released under the MIT License. See the LICENSE file for details.
-
+This project is released under the MIT License. Respect TAPVid-3D / Panoptic Studio / Dynamic3DGaussians licenses when using the data.
 
 ## Contact
 
@@ -133,4 +135,4 @@ For questions or issues, please open an issue on GitHub.
 
 ---
 
-**For complete visualizations and supplementary materials, visit our [Project Page](https://ostadabbas.github.io/lapa.github.io/)**
+**For visualizations and supplementary materials, visit our [Project Page](https://ostadabbas.github.io/lapa.github.io/)**

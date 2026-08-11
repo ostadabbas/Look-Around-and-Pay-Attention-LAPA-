@@ -35,12 +35,16 @@ Main hub: [`bishoygaloaa/LAPA`](https://huggingface.co/bishoygaloaa/LAPA) · [Co
 | Model | Hugging Face | GitHub Release |
 |-------|--------------|----------------|
 | LAPA TAPVid-3D-MC | [bishoygaloaa/LAPA-TAPVid-3D-MC](https://huggingface.co/bishoygaloaa/LAPA-TAPVid-3D-MC) | [lapa-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-weights) (`lapa.pt`) |
-| LAPA PointOdyssey-MC | [bishoygaloaa/LAPA-PointOdyssey-MC](https://huggingface.co/bishoygaloaa/LAPA-PointOdyssey-MC) *(weights uploading when training finishes)* | Coming soon |
+| LAPA PointOdyssey-MC | [bishoygaloaa/LAPA-PointOdyssey-MC](https://huggingface.co/bishoygaloaa/LAPA-PointOdyssey-MC) | [lapa-odyssey-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-odyssey-weights) (`lapa.pt`) |
 | LAPA Joint | [bishoygaloaa/LAPA-Joint](https://huggingface.co/bishoygaloaa/LAPA-Joint) *(scheduled after PointOdyssey)* | Coming soon |
 
 **Direct download (TAPVid-3D-MC):**
 - Hugging Face: https://huggingface.co/bishoygaloaa/LAPA-TAPVid-3D-MC/resolve/main/lapa.pt
 - GitHub: https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/download/lapa-weights/lapa.pt
+
+**Direct download (PointOdyssey-MC):**
+- Hugging Face: https://huggingface.co/bishoygaloaa/LAPA-PointOdyssey-MC/resolve/main/lapa.pt
+- GitHub: https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/download/lapa-odyssey-weights/lapa.pt
 
 ```bash
 # Hugging Face CLI

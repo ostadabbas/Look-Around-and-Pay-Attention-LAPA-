@@ -36,6 +36,7 @@ Main hub: [`bishoygaloaa/LAPA`](https://huggingface.co/bishoygaloaa/LAPA) · [Co
 |-------|--------------|----------------|
 | LAPA TAPVid-3D-MC | [bishoygaloaa/LAPA-TAPVid-3D-MC](https://huggingface.co/bishoygaloaa/LAPA-TAPVid-3D-MC) | [lapa-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-weights) (`lapa.pt`) |
 | LAPA PointOdyssey-MC | [bishoygaloaa/LAPA-PointOdyssey-MC](https://huggingface.co/bishoygaloaa/LAPA-PointOdyssey-MC) | [lapa-odyssey-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-odyssey-weights) (`lapa.pt`) |
+| LAPA Joint | [bishoygaloaa/LAPA-Joint](https://huggingface.co/bishoygaloaa/LAPA-Joint) | [lapa-joint-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-joint-weights) (`lapa.pt`) |
 | LAPA Joint | [bishoygaloaa/LAPA-Joint](https://huggingface.co/bishoygaloaa/LAPA-Joint) *(scheduled after PointOdyssey)* | Coming soon |
 
 **Direct download (TAPVid-3D-MC):**
@@ -54,6 +55,10 @@ hf download bishoygaloaa/LAPA-TAPVid-3D-MC lapa.pt --local-dir checkpoints/lapa
 from huggingface_hub import hf_hub_download
 ckpt = hf_hub_download("bishoygaloaa/LAPA-TAPVid-3D-MC", "lapa.pt")
 ```
+
+**Direct download (Joint):**
+- Hugging Face: https://huggingface.co/bishoygaloaa/LAPA-Joint/resolve/main/lapa.pt
+- GitHub: https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/download/lapa-joint-weights/lapa.pt
 
 ## Quick Start
 

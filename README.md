@@ -37,7 +37,6 @@ Main hub: [`bishoygaloaa/LAPA`](https://huggingface.co/bishoygaloaa/LAPA) · [Co
 | LAPA TAPVid-3D-MC | [bishoygaloaa/LAPA-TAPVid-3D-MC](https://huggingface.co/bishoygaloaa/LAPA-TAPVid-3D-MC) | [lapa-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-weights) (`lapa.pt`) |
 | LAPA PointOdyssey-MC | [bishoygaloaa/LAPA-PointOdyssey-MC](https://huggingface.co/bishoygaloaa/LAPA-PointOdyssey-MC) | [lapa-odyssey-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-odyssey-weights) (`lapa.pt`) |
 | LAPA Joint | [bishoygaloaa/LAPA-Joint](https://huggingface.co/bishoygaloaa/LAPA-Joint) | [lapa-joint-weights](https://github.com/ostadabbas/Look-Around-and-Pay-Attention-LAPA-/releases/tag/lapa-joint-weights) (`lapa.pt`) |
-| LAPA Joint | [bishoygaloaa/LAPA-Joint](https://huggingface.co/bishoygaloaa/LAPA-Joint) *(scheduled after PointOdyssey)* | Coming soon |
 
 **Direct download (TAPVid-3D-MC):**
 - Hugging Face: https://huggingface.co/bishoygaloaa/LAPA-TAPVid-3D-MC/resolve/main/lapa.pt
@@ -126,7 +125,7 @@ Paper recipe: AdamW lr=1e-4, wd=1e-5, cosine + 5-epoch warmup,
 | `evaluate_lapa.py` | Evaluation |
 | `inference_lapa.py` | Inference |
 
-Legacy prototype modules under `lapa/models/geometric_attention*.py` are kept for reference but are **not** used by the release pipeline.
+Legacy prototype modules under `lapa/models/geometric_attention*.py` and scripts such as `train_multi_sequence_tracker.py` are kept for reference. They are **not** the public pipeline (they depended on a private `mcmpt` package that is not in this repo).
 
 ## Citation
 

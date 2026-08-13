@@ -22,9 +22,16 @@ from datetime import datetime
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from mcmpt.data_utils.tap3d_dataset import TAP3DVidDataset
-from mcmpt.modules.learnable_point_tracker import LearnablePointTracker
-from mcmpt.losses.track_losses import TrackingLoss
+try:
+    from mcmpt.data_utils.tap3d_dataset import TAP3DVidDataset
+    from mcmpt.modules.learnable_point_tracker import LearnablePointTracker
+    from mcmpt.losses.track_losses import TrackingLoss
+except ImportError as exc:
+    raise ImportError(
+        "train_multi_sequence_tracker.py is a legacy prototype and depends on "
+        "`mcmpt`, which is not included in this repository. "
+        "Use `python train_lapa.py` and `python inference_lapa.py` instead."
+    ) from exc
 
 
 class MultiSequenceDataset(Dataset):

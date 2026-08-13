@@ -1,0 +1,13 @@
+.env
+.claude/
+/data/
+/checkpoints/
+/outputs/
+*.pt
+*.pth
+__pycache__/
+*.pyc
+.DS_Store
+*.partial
+*.partial.h5
+*.partial.npz

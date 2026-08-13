@@ -1,8 +1,10 @@
 """
-TAP3D Dataset Loader
+Legacy TAP3D dataset loader (prototype).
 
-This module provides tools for loading and preprocessing data from the TAP3D dataset,
-with special attention to proper camera intrinsics handling.
+The public training / inference path does not use this module. Use
+``lapa.data.mc_builder`` and ``lapa.data.mc_dataset.TAPVid3DMCDataset`` instead.
+
+The optional ``mcmpt`` calibration helper is not shipped in this repository.
 """
 
 import os
@@ -11,8 +13,10 @@ import cv2
 import torch
 from typing import Dict, List, Tuple, Optional, Union
 
-# Import the TAP3D calibration utilities
-from mcmpt.data_utils.tap3d_calibration import TAP3DCalibration
+try:
+    from mcmpt.data_utils.tap3d_calibration import TAP3DCalibration
+except ImportError:  # mcmpt is not part of the public LAPA release
+    TAP3DCalibration = None
 
 
 class TAP3DLoader:
@@ -31,6 +35,11 @@ class TAP3DLoader:
         # Load calibration if provided
         self.calibration = None
         if calibration_file is not None and os.path.exists(calibration_file):
+            if TAP3DCalibration is None:
+                raise ImportError(
+                    "Legacy TAP3DLoader calibration needs `mcmpt`, which is not "
+                    "in this repo. Use lapa.data.mc_builder / TAPVid3DMCDataset."
+                )
             self.calibration = TAP3DCalibration(calibration_file)
     
     def list_views(self) -> List[str]:

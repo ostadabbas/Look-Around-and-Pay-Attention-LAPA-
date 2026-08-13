@@ -1,7 +1,11 @@
 """
-LAPA (Look Around and Pay Attention) - Multi-Camera Point Tracking Pipeline.
+LAPA (Look Around and Pay Attention) - Multi-Camera Point Tracking.
 
-A pipeline for multi-camera point tracking using the TAP3D dataset.
+Paper: https://arxiv.org/abs/2512.04213
 """
 
-__version__ = '0.1.0'
+__version__ = "0.1.0"
+
+from lapa.models.lapa import LAPA, count_parameters, build_w2c_normalized
+
+__all__ = ["LAPA", "count_parameters", "build_w2c_normalized", "__version__"]

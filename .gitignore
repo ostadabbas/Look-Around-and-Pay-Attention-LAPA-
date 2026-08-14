@@ -3,6 +3,20 @@
 /data/
 /checkpoints/
 /outputs/
+scripts/_local/
+# Local-only multi-run / publish helpers (not pushed)
+scripts/launch_4gpu_train.sh
+scripts/launch_4gpu_train_odyssey.sh
+scripts/launch_4gpu_train_joint.sh
+scripts/select_best_among_seeds.py
+scripts/finish_retrain.py
+scripts/publish_watchdog.sh
+scripts/schedule_after_tapvid.sh
+scripts/schedule_joint_after_odyssey.sh
+scripts/schedule_retrain.sh
+scripts/wait_precompute_then_retrain.sh
+scripts/launch_precompute_fix.sh
+scripts/autopublish_odyssey.sh
 *.pt
 *.pth
 __pycache__/
@@ -11,3 +25,4 @@ __pycache__/
 *.partial
 *.partial.h5
 *.partial.npz
+

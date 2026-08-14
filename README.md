@@ -111,10 +111,10 @@ python -m lapa.features.precompute --device cuda:0 --max_points 256
 # Single GPU
 python train_lapa.py --device cuda:0 --output_dir checkpoints/lapa --epochs 50
 
-# 4× GPU (one job per V100)
-bash scripts/launch_4gpu_train.sh          # TAPVid-3D-MC
-bash scripts/launch_4gpu_train_odyssey.sh  # PointOdyssey-MC
-bash scripts/launch_4gpu_train_joint.sh    # joint (both datasets)
+# Or via helper scripts (set GPU=… / OUT=… to override)
+bash scripts/launch_train.sh           # TAPVid-3D-MC
+bash scripts/launch_train_odyssey.sh   # PointOdyssey-MC
+bash scripts/launch_train_joint.sh     # joint (both datasets)
 ```
 
 Paper recipe: AdamW lr=1e-4, wd=1e-5, cosine + 5-epoch warmup,  

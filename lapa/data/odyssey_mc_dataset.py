@@ -160,26 +160,21 @@ class PointOdysseyMCDataset(Dataset):
 
             with h5py.File(cam["feat_path"], "r") as f:
                 key_2d = "tracks_2d_gt" if self.use_gt_tracks else "tracks_2d"
+                if key_2d not in f:
+                    key_2d = "tracks_2d"
                 tracks_2d = np.asarray(f[key_2d], dtype=np.float32)
                 feats = np.asarray(f["features"], dtype=np.float16)
-                vis_n = np.asarray(f["visibility"], dtype=bool)
                 image_size = (int(f.attrs["W"]), int(f.attrs["H"]))
 
-            Nn = tracks_2d.shape[1]
-            Kn = min(self.max_points, Nn)
-            vis_start = vis_n[frame_idx[0]]
-            cand = np.where(vis_start)[0]
-            if len(cand) == 0:
-                cand = np.arange(Nn)
-            if len(cand) >= Kn:
-                sel = np.array(rng.sample(list(cand), Kn), dtype=np.int64)
-            else:
-                sel = cand
-            sel.sort()
-
+            # Same identities across views (canonical / shared world tracks)
+            sel = point_idx
+            sel = sel[sel < tracks_2d.shape[1]]
             pts_list, feat_list = [], []
             for t in frame_idx:
-                pts_list.append(torch.from_numpy(tracks_2d[t, sel]).float())
+                uv_t = tracks_2d[t, sel].astype(np.float32)
+                if t == frame_idx[0]:
+                    uv_t = uv[0, : len(sel)].astype(np.float32)  # query frame = GT
+                pts_list.append(torch.from_numpy(uv_t).float())
                 feat_list.append(torch.from_numpy(feats[t, sel].astype(np.float32)))
             view_points_2d_native.append(pts_list)
             view_features_native.append(feat_list)
@@ -197,6 +192,9 @@ class PointOdysseyMCDataset(Dataset):
             "view_features_native": view_features_native,
             "view_K": view_K,
             "view_w2c_norm": view_w2c_norm,
+            "view_w2c_world": [
+                torch.tensor(c["w2c"], dtype=torch.float32) for c in chosen
+            ],
             "aabb_center": center,
             "aabb_half": half,
             "image_size": image_size,

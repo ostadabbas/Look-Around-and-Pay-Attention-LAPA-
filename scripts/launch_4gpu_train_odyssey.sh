@@ -15,7 +15,7 @@ for i in 0 1 2 3; do
   OUT="checkpoints/lapa_odyssey_mgpu/run_seed${SEED}"
   mkdir -p "$OUT"
   echo "Launching Odyssey seed=$SEED on physical GPU $GPU -> $OUT"
-  CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$GPU python train_lapa.py \
+  CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$GPU nohup python train_lapa.py \
       --dataset pointodyssey \
       --device cuda:0 \
       --output_dir "$OUT" \

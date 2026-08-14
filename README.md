@@ -65,18 +65,25 @@ ckpt = hf_hub_download("bishoygaloaa/LAPA-TAPVid-3D-MC", "lapa.pt")
 
 ```bash
 python inference_lapa.py \
-  --checkpoint checkpoints/lapa/best.pt \
+  --checkpoint checkpoints/lapa/lapa.pt \
   --scene boxes --cameras 5 6 7 \
   --feature_dir data/feature_cache \
   --output outputs/inference_boxes.npz
 ```
 
-### Evaluate
+### Evaluate (TAPVid-3D-MC minival)
 
 ```bash
+# Default (CoTracker tracks at t>0; query frame is GT)
 python evaluate_lapa.py \
-  --checkpoint checkpoints/lapa/best.pt \
+  --checkpoint checkpoints/lapa/lapa.pt \
   --output outputs/eval_metrics.json
+
+# Optional: GT 2D tracks at every frame
+python evaluate_lapa.py \
+  --checkpoint checkpoints/lapa/lapa.pt \
+  --use_gt_tracks \
+  --output outputs/eval_metrics_gt.json
 ```
 
 ## Data: TAPVid-3D-MC
@@ -85,14 +92,16 @@ python evaluate_lapa.py \
 # 1) Download TAPVid-3D pstudio (minival) + Dynamic3DGaussians calibration/frames
 python scripts/download_data.py --output_dir ./data
 
-# 2) Full-eval annotations are at v1.0/pstudio (joined with D3G images by the
-#    helper in scripts/download_data.py / the session build script)
-
-# 3) Build multi-camera metadata + world tracks
+# 2) Build multi-camera metadata + world tracks
 python -m lapa.data.mc_builder \
   --npz_root ./data --d3g_root ./data/d3g/data --out_dir ./data/tapvid3d_mc
 
-# 4) Precompute DINOv2 features (and optional CoTracker tracks)
+# 3) Canonical tracks + CoTracker/DINOv2 caches (needed for train/eval)
+python -m lapa.data.canonical --max_points 512
+python -m lapa.features.precompute_canonical --mode canonical --use_cotracker --device cuda:0
+python -m lapa.features.precompute_canonical --mode eval --use_cotracker --device cuda:0
+
+# Optional sparse DINOv2 cache
 python -m lapa.features.precompute --device cuda:0 --max_points 256
 ```
 
@@ -115,13 +124,15 @@ Paper recipe: AdamW lr=1e-4, wd=1e-5, cosine + 5-epoch warmup,
 
 | Path | Purpose |
 |------|---------|
-| `lapa/models/lapa.py` | Paper method (volumetric attention + triangulation MLP) |
-| `lapa/data/mc_builder.py` | TAPVid-3D-MC construction + calibration gate |
-| `lapa/data/mc_dataset.py` | 3-camera triplet dataset |
+| `lapa/models/lapa.py` | Model |
+| `lapa/data/mc_builder.py` | TAPVid-3D-MC construction |
+| `lapa/data/mc_dataset.py` | Multi-camera dataset |
+| `lapa/data/canonical.py` | Canonical point sets |
 | `lapa/features/precompute.py` | DINOv2 (+ optional CoTracker) cache |
-| `lapa/losses.py` | Multi-objective loss |
-| `lapa/eval/metrics.py` | Official TAPVid-3D metrics |
-| `train_lapa.py` | Training entry point |
+| `lapa/features/precompute_canonical.py` | Canonical CoTracker/DINOv2 cache |
+| `lapa/losses.py` | Training losses |
+| `lapa/eval/metrics.py` | TAPVid-3D metrics |
+| `train_lapa.py` | Training |
 | `evaluate_lapa.py` | Evaluation |
 | `inference_lapa.py` | Inference |
 

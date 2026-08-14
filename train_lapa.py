@@ -15,6 +15,7 @@ import os
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -22,8 +23,14 @@ from tqdm import tqdm
 from lapa.data.mc_dataset import TAPVid3DMCDataset, collate_identity
 from lapa.data.odyssey_mc_dataset import PointOdysseyMCDataset
 from lapa.data.joint_mc_dataset import JointMCDataset
+from lapa.eval.protocol import score_tracks
 from lapa.losses import LAPALoss
 from lapa.models.lapa import LAPA, count_parameters
+
+
+def _stack_obs_2d(view_pts_native):
+    """List[view][t](M,2) -> list[view] of (T, M, 2)."""
+    return [torch.stack(view, dim=0) for view in view_pts_native]
 
 
 def cosine_warmup_lambda(epoch: int, warmup: int, total: int) -> float:
@@ -55,6 +62,8 @@ def train_one_epoch(model, loader, criterion, optimizer, device, max_steps=None)
         view_pts_proj = [p.to(device) for p in batch["view_points_2d"]]
         vis_per_view = [v.to(device) for v in batch["visible_per_view"]]
         image_size = tuple(batch["image_size"])
+        aabb_center = batch["aabb_center"].to(device)
+        aabb_half = batch["aabb_half"].to(device)
 
         out = model(
             view_pts_native,
@@ -63,6 +72,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, max_steps=None)
             view_w2c,
             queries0,
             image_size,
+            view_valid=vis_per_view,
         )
         # Use grid from last frame for attn loss
         grid = model.create_grid(device)
@@ -77,7 +87,15 @@ def train_one_epoch(model, loader, criterion, optimizer, device, max_steps=None)
             attn_lists=out["attn_lists"],
             grid=grid,
             vis_logits=out["vis_logits"],
+            aabb_center=aabb_center,
+            aabb_half=aabb_half,
+            view_w=out.get("view_w"),
+            obs_points_2d=_stack_obs_2d(view_pts_native),
+            image_size=image_size,
         )
+        if not torch.isfinite(loss_out["loss"]):
+            optimizer.zero_grad(set_to_none=True)
+            continue
         optimizer.zero_grad(set_to_none=True)
         loss_out["loss"].backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -99,7 +117,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, max_steps=None)
 @torch.no_grad()
 def evaluate(model, loader, criterion, device, max_steps=50):
     model.eval()
-    meters = {"loss": 0.0, "l_recon": 0.0, "l_proj": 0.0, "n": 0, "mpjpe": 0.0}
+    meters = {"loss": 0.0, "l_recon": 0.0, "l_proj": 0.0, "n": 0, "mpjpe": 0.0, "apd": 0.0}
     for step, batch in enumerate(loader):
         if step >= max_steps:
             break
@@ -117,6 +135,8 @@ def evaluate(model, loader, criterion, device, max_steps=50):
         view_pts_proj = [p.to(device) for p in batch["view_points_2d"]]
         vis_per_view = [v.to(device) for v in batch["visible_per_view"]]
         image_size = tuple(batch["image_size"])
+        aabb_center = batch["aabb_center"].to(device)
+        aabb_half = batch["aabb_half"].to(device)
 
         out = model(
             view_pts_native,
@@ -125,6 +145,7 @@ def evaluate(model, loader, criterion, device, max_steps=50):
             view_w2c,
             queries0,
             image_size,
+            view_valid=vis_per_view,
         )
         grid = model.create_grid(device)
         loss_out = criterion(
@@ -138,6 +159,11 @@ def evaluate(model, loader, criterion, device, max_steps=50):
             attn_lists=out["attn_lists"],
             grid=grid,
             vis_logits=out["vis_logits"],
+            aabb_center=aabb_center,
+            aabb_half=aabb_half,
+            view_w=out.get("view_w"),
+            obs_points_2d=_stack_obs_2d(view_pts_native),
+            image_size=image_size,
         )
         # MPJPE in normalized space
         err = ((out["points_3d"] - gt_norm) ** 2).sum(-1).sqrt()
@@ -149,6 +175,32 @@ def evaluate(model, loader, criterion, device, max_steps=50):
         meters["l_recon"] += float(loss_out["l_recon"])
         meters["l_proj"] += float(loss_out["l_proj"])
         meters["mpjpe"] += float(mpjpe)
+
+        pred_norm = out["points_3d"].detach().cpu().numpy()
+        pred_world = pred_norm * aabb_half.detach().cpu().numpy() + aabb_center.detach().cpu().numpy()
+        pred_vis = (out["vis_logits"].detach().cpu().numpy() > 0)
+        w2c_ref = batch["view_w2c_world"][0].numpy() if "view_w2c_world" in batch else None
+        if w2c_ref is None:
+            from lapa.eval.protocol import w2c_from_normalized
+            w2c_ref = w2c_from_normalized(
+                batch["view_w2c_norm"][0].numpy(),
+                batch["aabb_center"].numpy(),
+                batch["aabb_half"].numpy(),
+            )
+        K = batch["view_K"][0].cpu().numpy()
+        try:
+            m = score_tracks(
+                pred_world=pred_world,
+                gt_world=batch["gt_world"].numpy(),
+                pred_visible=pred_vis,
+                gt_visible=batch["visible"].numpy(),
+                w2c_ref=w2c_ref,
+                intrinsics=np.array([K[0, 0], K[1, 1], K[0, 2], K[1, 2]]),
+                image_size=image_size,
+            )
+            meters["apd"] += m["APD"]
+        except Exception:
+            pass
 
     n = max(meters["n"], 1)
     return {k: meters[k] / n for k in meters if k != "n"}
@@ -185,6 +237,11 @@ def main():
     parser.add_argument("--overfit", action="store_true", help="Overfit single scene")
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--use_gt_tracks",
+        action="store_true",
+        help="Use GT 2D at t>0 (overfit / upper bound). Default: CoTracker.",
+    )
     args = parser.parse_args()
 
     if args.output_dir is None:
@@ -211,6 +268,7 @@ def main():
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    use_gt = bool(args.use_gt_tracks or args.overfit)
     overfit_scene = None
     if args.dataset == "joint":
         DatasetCls = JointMCDataset
@@ -224,6 +282,7 @@ def main():
             num_frames=args.num_frames if not args.overfit else 16,
             max_points=args.max_points if not args.overfit else 32,
             tapvid_prob=args.tapvid_prob,
+            use_gt_tracks=use_gt,
         )
     elif args.dataset == "pointodyssey":
         DatasetCls = PointOdysseyMCDataset
@@ -233,6 +292,7 @@ def main():
             num_views=args.num_views,
             num_frames=args.num_frames if not args.overfit else 16,
             max_points=args.max_points if not args.overfit else 32,
+            use_gt_tracks=use_gt,
         )
     else:
         DatasetCls = TAPVid3DMCDataset
@@ -245,6 +305,7 @@ def main():
             num_frames=args.num_frames if not args.overfit else 16,
             max_points=args.max_points if not args.overfit else 32,
             scenes=[overfit_scene] if args.overfit else None,
+            use_gt_tracks=use_gt,
         )
 
     train_ds = DatasetCls(split="train", **ds_kwargs)
@@ -295,7 +356,9 @@ def main():
     model = LAPA(volume_size=args.volume_size).to(device)
     nparams = count_parameters(model)
     print(f"LAPA parameters: {nparams:,}")
-    criterion = LAPALoss(lambda_recon=1.0, lambda_proj=0.7, lambda_attn=0.8, lambda_vis=0.5)
+    criterion = LAPALoss(
+        lambda_recon=10.0, lambda_proj=0.5, lambda_attn=0.1, lambda_vis=0.5, lambda_view=2.0
+    )
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay
     )
@@ -306,12 +369,14 @@ def main():
 
     start_epoch = 0
     best_recon = float("inf")
+    best_apd = -1.0
     if args.resume and Path(args.resume).exists():
         ckpt = torch.load(args.resume, map_location=device)
-        model.load_state_dict(ckpt["model"])
+        model.load_state_dict(ckpt["model"], strict=False)
         optimizer.load_state_dict(ckpt["optimizer"])
         start_epoch = ckpt.get("epoch", 0)
         best_recon = ckpt.get("best_recon", best_recon)
+        best_apd = ckpt.get("best_apd", best_apd)
         print(f"Resumed from {args.resume} at epoch {start_epoch}")
 
     history = []
@@ -349,34 +414,41 @@ def main():
             f"Epoch {epoch+1}/{args.epochs}  lr={lr:.2e}  "
             f"train_loss={train_stats['loss']:.4f} recon={train_stats['l_recon']:.4f}  "
             f"val_recon={val_stats.get('l_recon', float('nan')):.4f}  "
+            f"val_apd={val_stats.get('apd', float('nan')):.2f}  "
             f"val_mpjpe={val_stats.get('mpjpe', float('nan')):.4f}"
         )
 
-        # Checkpoint
+        recon = val_stats.get("l_recon", train_stats["l_recon"])
+        apd = val_stats.get("apd", 0.0)
         ckpt = {
             "epoch": epoch + 1,
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "best_recon": best_recon,
+            "best_apd": best_apd,
             "args": vars(args),
             "nparams": nparams,
         }
         torch.save(ckpt, out_dir / "last.pt")
-        recon = val_stats.get("l_recon", train_stats["l_recon"])
-        if recon < best_recon:
-            best_recon = recon
+        # Prefer higher APD; fall back to lower recon if APD is unavailable
+        improved = apd > best_apd + 1e-6 if apd > 0 else recon < best_recon
+        if improved:
+            best_apd = max(best_apd, apd)
+            best_recon = min(best_recon, recon)
             ckpt["best_recon"] = best_recon
+            ckpt["best_apd"] = best_apd
             torch.save(ckpt, out_dir / "best.pt")
-            print(f"  saved best.pt (recon={best_recon:.4f})")
+            print(f"  saved best.pt (apd={best_apd:.2f} recon={best_recon:.4f})")
 
         with open(out_dir / "history.json", "w") as f:
             json.dump(history, f, indent=2)
 
-        if args.overfit and train_stats["l_recon"] < 1e-2:
-            print(f"Overfit gate PASSED (recon={train_stats['l_recon']:.4f} < 0.01)")
+        # Huber-in-metres gate: 1.5 cm. Old squared-norm 1e-4 ≈ 1.4 cm.
+        if args.overfit and train_stats["l_recon"] < 0.015:
+            print(f"Overfit gate PASSED (recon={train_stats['l_recon']:.4f} m < 0.015)")
             break
 
-    print(f"Training complete. Best recon={best_recon:.4f}")
+    print(f"Training complete. Best APD={best_apd:.2f} recon={best_recon:.4f}")
     print(f"Checkpoints in {out_dir}")
 
 

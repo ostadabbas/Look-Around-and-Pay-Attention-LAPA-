@@ -79,7 +79,9 @@ def run_inference(args):
         view_pts = [[p for p in v[:T]] for v in view_pts]
         view_feats = [[f for f in v[:T]] for v in view_feats]
 
-    out = model(view_pts, view_feats, view_K, view_w2c, queries0, (640, 360))
+    out = model(
+        view_pts, view_feats, view_K, view_w2c, queries0, (640, 360)
+    )
     pred_norm = out["points_3d"].cpu().numpy()
     pred_world = pred_norm * half.cpu().numpy() + center.cpu().numpy()
     vis_prob = torch.sigmoid(out["vis_logits"]).cpu().numpy()

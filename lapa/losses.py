@@ -16,27 +16,83 @@ class LAPALoss(nn.Module):
         lambda_proj: float = 0.7,
         lambda_attn: float = 0.8,
         lambda_vis: float = 0.5,
+        lambda_view: float = 1.0,
     ):
         super().__init__()
         self.lambda_recon = lambda_recon
         self.lambda_proj = lambda_proj
         self.lambda_attn = lambda_attn
         self.lambda_vis = lambda_vis
+        self.lambda_view = lambda_view
+
+    def view_weight_loss(
+        self,
+        view_w: torch.Tensor,
+        obs_2d: List[torch.Tensor],
+        gt_norm: torch.Tensor,
+        view_K: List[torch.Tensor],
+        view_w2c_norm: List[torch.Tensor],
+        visible_per_view: List[torch.Tensor],
+        image_size: Tuple[int, int] = (640, 360),
+    ) -> torch.Tensor:
+        """Push view weights onto low-reprojection-error observations.
+
+        view_w: (T, V, M)  obs_2d[a]: (T, M, 2) corresponded tracker/GT 2D.
+        """
+        T, V, M = view_w.shape
+        W, H = image_size
+        diag = float((W ** 2 + H ** 2) ** 0.5)
+        errs = []
+        valids = []
+        for a in range(V):
+            K = view_K[a]
+            w2c = view_w2c_norm[a]
+            R, t = w2c[:3, :3], w2c[:3, 3]
+            pts_cam = torch.einsum("ij,tmj->tmi", R, gt_norm) + t
+            z = pts_cam[..., 2].clamp(min=1e-6)
+            u = K[0, 0] * (pts_cam[..., 0] / z) + K[0, 2]
+            v = K[1, 1] * (pts_cam[..., 1] / z) + K[1, 2]
+            uv_gt = torch.stack([u, v], dim=-1)
+            err = ((obs_2d[a] - uv_gt) / diag).pow(2).sum(dim=-1).sqrt()  # (T, M)
+            errs.append(err)
+            valids.append(visible_per_view[a].float())
+        err = torch.stack(errs, dim=1)  # (T, V, M)
+        valid = torch.stack(valids, dim=1)
+        # Softmax over views so weights compete; invalid views get -inf.
+        logits = torch.log(view_w.clamp(min=1e-6))
+        logits = logits.masked_fill(valid < 0.5, -1e4)
+        w = torch.softmax(logits, dim=1)
+        return (w * err * valid).sum() / valid.sum().clamp(min=1.0)
 
     def reconstruction_loss(
         self,
         pred: torch.Tensor,
         gt: torch.Tensor,
         visible: torch.Tensor,
+        aabb_half: Optional[torch.Tensor] = None,
+        aabb_center: Optional[torch.Tensor] = None,
+        huber_delta: float = 0.05,
     ) -> torch.Tensor:
-        """L_recon = mean ||p - p_gt||^2 over visible points.
+        """Huber reconstruction in metres (falls back to normalized L2).
 
-        pred, gt: (T, M, 3); visible: (T, M) bool/float
+        pred, gt: (T, M, 3); visible: (T, M)
         """
-        diff2 = ((pred - gt) ** 2).sum(dim=-1)  # (T, M)
+        if aabb_half is not None and aabb_center is not None:
+            pred_m = pred * aabb_half + aabb_center
+            gt_m = gt * aabb_half + aabb_center
+        else:
+            pred_m = pred
+            gt_m = gt
+        dist = (pred_m - gt_m).norm(dim=-1)
+        delta = pred.new_tensor(huber_delta)
+        huber = torch.where(
+            dist < delta,
+            0.5 * dist.square(),
+            delta * (dist - 0.5 * delta),
+        )
         w = visible.float()
         denom = w.sum().clamp(min=1.0)
-        return (diff2 * w).sum() / denom
+        return (huber * w).sum() / denom
 
     def projection_loss(
         self,
@@ -73,8 +129,9 @@ class LAPALoss(nn.Module):
             uv = torch.stack([u, v], dim=-1)  # (T, M, 2)
             gt = gt_points_2d[a]
             vis = visible_per_view[a].float()
-            # Normalized squared pixel error
-            err = ((uv - gt) / diag).pow(2).sum(dim=-1)
+            # Normalized squared pixel error (clamped: bad DLT outliers must not
+            # dominate the batch and explode the running train loss).
+            err = ((uv - gt) / diag).pow(2).sum(dim=-1).clamp(max=50.0)
             total = total + (err * vis).sum()
             count = count + vis.sum()
         return total / count.clamp(min=1.0)
@@ -142,7 +199,9 @@ class LAPALoss(nn.Module):
                 mass = mass / mass.sum().clamp(min=1e-8)
                 view_masses.append(mass)
                 # Align with target (stable CE)
-                losses.append(F.kl_div((mass + 1e-8).log(), target, reduction="sum"))
+                losses.append(
+                    F.kl_div((mass + 1e-8).log(), target, reduction="sum").clamp(max=10.0)
+                )
 
             # Cross-view agreement (soft; clamped to avoid a large loss floor)
             for i in range(len(view_masses)):
@@ -176,15 +235,16 @@ class LAPALoss(nn.Module):
         attn_lists: List[List[torch.Tensor]],
         grid: torch.Tensor,
         vis_logits: Optional[torch.Tensor] = None,
+        aabb_center: Optional[torch.Tensor] = None,
+        aabb_half: Optional[torch.Tensor] = None,
+        view_w: Optional[torch.Tensor] = None,
+        obs_points_2d: Optional[List[torch.Tensor]] = None,
+        image_size: Tuple[int, int] = (640, 360),
     ) -> Dict[str, torch.Tensor]:
-        l_recon = self.reconstruction_loss(pred_norm, gt_norm, visible)
-        # Infer image size from 2D extent if possible
-        img_w, img_h = 640, 360
-        if gt_points_2d:
-            pts0 = gt_points_2d[0]
-            if pts0.numel() > 0:
-                img_w = int(max(640, float(pts0[..., 0].max().item()) + 1))
-                img_h = int(max(360, float(pts0[..., 1].max().item()) + 1))
+        l_recon = self.reconstruction_loss(
+            pred_norm, gt_norm, visible, aabb_half=aabb_half, aabb_center=aabb_center
+        )
+        img_w, img_h = image_size
         l_proj = self.projection_loss(
             pred_norm,
             gt_points_2d,
@@ -205,8 +265,20 @@ class LAPALoss(nn.Module):
             "l_proj": l_proj.detach(),
             "l_attn": l_attn.detach(),
         }
+        if view_w is not None and obs_points_2d is not None:
+            l_view = self.view_weight_loss(
+                view_w,
+                obs_points_2d,
+                gt_norm,
+                view_K,
+                view_w2c_norm,
+                visible_per_view,
+                image_size=(img_w, img_h),
+            )
+            out["loss"] = out["loss"] + self.lambda_view * l_view
+            out["l_view"] = l_view.detach()
         if vis_logits is not None:
             l_vis = self.visibility_loss(vis_logits, visible)
-            out["loss"] = total + self.lambda_vis * l_vis
+            out["loss"] = out["loss"] + self.lambda_vis * l_vis
             out["l_vis"] = l_vis.detach()
         return out

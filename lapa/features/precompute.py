@@ -115,10 +115,17 @@ class DINOv2FeatureExtractor:
         return feats.astype(np.float16)
 
 
+def get_cotracker(device: torch.device):
+    model = torch.hub.load("facebookresearch/co-tracker", "cotracker3_offline")
+    return model.to(device).eval()
+
+
 def run_cotracker(
     frames_rgb: np.ndarray,
     queries_xyt: np.ndarray,
     device: torch.device,
+    model=None,
+    vis_threshold: float = 0.3,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Run CoTracker3 offline.
 
@@ -126,8 +133,8 @@ def run_cotracker(
     queries_xyt: (N, 3) with (x, y, t)
     Returns: tracks (T, N, 2), visibility (T, N)
     """
-    model = torch.hub.load("facebookresearch/co-tracker", "cotracker3_offline")
-    model = model.to(device).eval()
+    if model is None:
+        model = get_cotracker(device)
     video = (
         torch.from_numpy(frames_rgb).permute(0, 3, 1, 2).float()[None].to(device)
     )  # (1, T, 3, H, W)
@@ -142,7 +149,7 @@ def run_cotracker(
     tracks = pred_tracks[0].cpu().numpy().astype(np.float32)
     vis = pred_visibility[0].cpu().numpy()
     if vis.dtype != np.bool_:
-        vis = vis > 0.5
+        vis = vis > vis_threshold
     return tracks, vis.astype(bool)
 
 

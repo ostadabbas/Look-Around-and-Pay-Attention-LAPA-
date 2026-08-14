@@ -18,6 +18,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from lapa.geom.dlt import projection_matrices, triangulate_dlt_irls
+
 
 def count_parameters(module: nn.Module) -> int:
     return sum(p.numel() for p in module.parameters() if p.requires_grad)
@@ -38,15 +40,30 @@ class FeatureProjector(nn.Module):
         return self.net(x)
 
 
+class ViewWeightHead(nn.Module):
+    """Per-view observation weight from appearance, reprojection residual, validity."""
+
+    def __init__(self, feature_dim: int = 128):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(feature_dim + 3, 64),
+            nn.ReLU(inplace=True),
+            nn.Linear(64, 1),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x).squeeze(-1)
+
+
 class TriangulationMLP(nn.Module):
     """Paper §3.3 / S4.2: MLP [512, 256, 128, 3] with BN, ReLU, dropout 0.2.
 
-    Input is concatenation of [g_m (3), f_m (D), c_m (1)] = D+4.
+    Input is [p_dlt (3), f_tri (D), c_m (1), residual summary (1)] = D+5.
     """
 
-    def __init__(self, feature_dim: int = 128, dropout: float = 0.2):
+    def __init__(self, feature_dim: int = 128, dropout: float = 0.2, extra: int = 1):
         super().__init__()
-        in_dim = feature_dim + 4  # grid pos (3) + feat (D) + corr score (1)
+        in_dim = feature_dim + 4 + extra
         self.net = nn.Sequential(
             nn.Linear(in_dim, 512),
             nn.BatchNorm1d(512),
@@ -107,11 +124,14 @@ class LAPA(nn.Module):
             nn.Linear(feature_dim, feature_dim),
         )
 
-        self.triangulation = TriangulationMLP(feature_dim, dropout=dropout)
+        self.triangulation = TriangulationMLP(feature_dim, dropout=dropout, extra=5)
+        self.view_weight_head = ViewWeightHead(feature_dim)
+        # Residual around the DLT anchor; keep small so refine cannot undo geometry
+        self.refine_scale = 0.02
 
-        # Visibility head (documented deviation)
+        # Visibility head: appearance + corr + up to 4 views of (valid, residual, weight)
         self.visibility_head = nn.Sequential(
-            nn.Linear(feature_dim + 1, 64),
+            nn.Linear(feature_dim + 1 + 12, 64),
             nn.ReLU(inplace=True),
             nn.Linear(64, 1),
         )
@@ -383,48 +403,144 @@ class LAPA(nn.Module):
 
         return V_feat, attn_list
 
+    def sample_trilinear(self, V_feat: torch.Tensor, points: torch.Tensor) -> torch.Tensor:
+        """Trilinear sample volume features at normalized points.
+
+        V_feat: (Vs^3, D) in the same order as ``create_grid`` (z, y, x).
+        points: (M, 3) in approximately [-1, 1].
+        Returns: (M, D)
+        """
+        vs = self.volume_size
+        D = V_feat.shape[-1]
+        vol = V_feat.reshape(vs, vs, vs, D).permute(3, 0, 1, 2).unsqueeze(0)
+        # grid_sample: (N, C, D_z, H_y, W_x), grid xyz in [-1, 1]
+        grid = points.view(1, 1, 1, -1, 3)
+        sampled = F.grid_sample(
+            vol,
+            grid,
+            mode="bilinear",
+            padding_mode="border",
+            align_corners=True,
+        )
+        return sampled.view(D, -1).transpose(0, 1).contiguous()
+
+    def _project_points(
+        self,
+        points_norm: torch.Tensor,
+        K: torch.Tensor,
+        w2c_norm: torch.Tensor,
+    ) -> torch.Tensor:
+        R = w2c_norm[:3, :3]
+        t = w2c_norm[:3, 3]
+        pts_cam = points_norm @ R.T + t
+        z = pts_cam[:, 2].clamp(min=1e-6)
+        u = K[0, 0] * (pts_cam[:, 0] / z) + K[0, 2]
+        v = K[1, 1] * (pts_cam[:, 1] / z) + K[1, 2]
+        return torch.stack([u, v], dim=-1)
+
     def decode_queries(
         self,
         grid: torch.Tensor,
         V_feat: torch.Tensor,
         queries: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Decode 3D points for track queries via correspondence pooling + MLP.
+        view_data: List[dict],
+        view_valid: Optional[List[torch.Tensor]],
+        image_size: Tuple[int, int],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Decode 3D points via weighted DLT + sub-voxel residual.
 
-        Args:
-            grid: (V, 3)
-            V_feat: (V, D)
-            queries: (M, 3) current query positions in normalized space
         Returns:
-            points_3d: (M, 3) predicted normalized coords
-            corr: (M, V) correspondence weights
+            points_3d: (M, 3)
+            corr: (M, V_grid) unused-compat correspondence over the volume
             vis_logit: (M,)
+            p_dlt: (M, 3)
         """
         M = queries.shape[0]
-        q_feat = self.query_embed(queries)  # (M, D)
-        # Cosine similarity C(q_m, i)
+        n_views = len(view_data)
+        W, H = image_size
+        diag = float((W ** 2 + H ** 2) ** 0.5)
+
+        uv = torch.stack([vd["points_2d"] for vd in view_data], dim=0)  # (V, M, 2)
+        feats = torch.stack([vd["features"] for vd in view_data], dim=0)  # (V, M, D)
+        if view_valid is None:
+            valid = torch.ones(n_views, M, device=queries.device, dtype=queries.dtype)
+        else:
+            valid = torch.stack([v.float() for v in view_valid], dim=0)
+
+        # Reprojection residual of the current query (for view weights)
+        residuals = []
+        for a, vd in enumerate(view_data):
+            uv_q = self._project_points(queries, vd["K"], vd["w2c_norm"])
+            residuals.append((uv[a] - uv_q) / diag)
+        residual = torch.stack(residuals, dim=0)  # (V, M, 2)
+        resid_mag = residual.norm(dim=-1, keepdim=True)
+
+        weight_in = torch.cat([feats, residual, valid.unsqueeze(-1)], dim=-1)
+        view_logits = self.view_weight_head(weight_in.reshape(-1, weight_in.shape[-1]))
+        view_w = torch.sigmoid(view_logits).reshape(n_views, M) * valid
+        view_w = view_w + 1e-6
+
+        P = projection_matrices(
+            [vd["K"] for vd in view_data],
+            [vd["w2c_norm"] for vd in view_data],
+        )
+        # SVD-based DLT is not a stable autograd path (NaN grads). Run it under
+        # no_grad as a geometric anchor; route view-weight learning through the
+        # refine / visibility heads instead.
+        with torch.no_grad():
+            p_dlt = triangulate_dlt_irls(
+                uv,
+                P,
+                view_w.detach(),
+                fallback=queries.detach(),
+                iters=2,
+                sigma_px=5.0,
+            )
+        p_dlt = p_dlt.detach()
+
+        # Volume feature at the geometric anchor (sub-voxel)
+        f_tri = self.sample_trilinear(V_feat, p_dlt.clamp(-1.5, 1.5))
+
+        # Soft correspondence of queries to the grid (kept for L_attn / vis)
+        q_feat = self.query_embed(queries)
         q_n = F.normalize(q_feat, dim=-1)
         v_n = F.normalize(V_feat, dim=-1)
-        sim = q_n @ v_n.T  # (M, V)
+        sim = q_n @ v_n.T
         corr = F.softmax(sim / 0.1, dim=-1)
+        c_m = (corr * sim).sum(dim=-1, keepdim=True)
+        resid_mean = resid_mag.mean(dim=0)  # (M, 1)
 
-        # Soft pool
-        g_m = corr @ grid  # (M, 3)
-        f_m = corr @ V_feat  # (M, D)
-        c_m = (corr * sim).sum(dim=-1, keepdim=True)  # (M, 1)
+        # Pad view weights to 4 for a fixed refine / vis input size
+        w_pad = []
+        for a in range(4):
+            if a < n_views:
+                w_pad.append(view_w[a].unsqueeze(-1))
+            else:
+                w_pad.append(torch.zeros(M, 1, device=queries.device, dtype=queries.dtype))
+        w_feat = torch.cat(w_pad, dim=-1)  # (M, 4)
 
-        inp = torch.cat([g_m, f_m, c_m], dim=-1)  # (M, D+4)
-        # BatchNorm1d needs N>1 or eval mode; handle M=1
+        inp = torch.cat([p_dlt, f_tri, c_m, resid_mean, w_feat], dim=-1)
         if M == 1 and self.training:
             delta = self.triangulation(inp.repeat(2, 1))[:1]
         else:
             delta = self.triangulation(inp)
 
-        # Residual around pooled grid position, kept in normalized bounds
-        points = (g_m + torch.tanh(delta) * 0.5).clamp(-1.5, 1.5)
+        points = (p_dlt + torch.tanh(delta) * self.refine_scale).clamp(-1.5, 1.5)
 
-        vis_logit = self.visibility_head(torch.cat([f_m, c_m], dim=-1)).squeeze(-1)
-        return points, corr, vis_logit
+        # Pad per-view (valid, residual, weight) to 4 views for a fixed vis head
+        vis_side = []
+        for a in range(4):
+            if a < n_views:
+                vis_side.append(valid[a].unsqueeze(-1))
+                vis_side.append(resid_mag[a])
+                vis_side.append(view_w[a].unsqueeze(-1))
+            else:
+                z = torch.zeros(M, 1, device=queries.device, dtype=queries.dtype)
+                vis_side.extend([z, z, z])
+        vis_logit = self.visibility_head(
+            torch.cat([f_tri, c_m] + vis_side, dim=-1)
+        ).squeeze(-1)
+        return points, corr, vis_logit, p_dlt, view_w
 
     def forward_frame(
         self,
@@ -434,16 +550,18 @@ class LAPA(nn.Module):
         view_w2c_norm: List[torch.Tensor],
         queries: torch.Tensor,
         image_size: Tuple[int, int],
+        view_valid: Optional[List[torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         """Run LAPA for a single timestep.
 
         Args:
-            view_points_2d: list of (K_a, 2)
-            view_features: list of (K_a, dino_dim) — will be projected
+            view_points_2d: list of (M, 2) corresponded observations
+            view_features: list of (M, dino_dim)
             view_K: list of (3, 3)
-            view_w2c_norm: list of (4, 4) acting on normalized coords
+            view_w2c_norm: list of (4, 4)
             queries: (M, 3) in normalized space
             image_size: (W, H)
+            view_valid: optional list of (M,) validity masks
         """
         device = queries.device
         grid = self.create_grid(device)
@@ -463,7 +581,9 @@ class LAPA(nn.Module):
             )
 
         V_feat, attn_list = self.populate_volume(grid, view_data, image_size)
-        points_3d, corr, vis_logit = self.decode_queries(grid, V_feat, queries)
+        points_3d, corr, vis_logit, p_dlt, view_w = self.decode_queries(
+            grid, V_feat, queries, view_data, view_valid, image_size
+        )
 
         return {
             "points_3d": points_3d,
@@ -473,6 +593,8 @@ class LAPA(nn.Module):
             "attn_list": attn_list,
             "grid": grid,
             "queries": queries,
+            "p_dlt": p_dlt,
+            "view_w": view_w,
         }
 
     def forward(
@@ -483,21 +605,11 @@ class LAPA(nn.Module):
         view_w2c_norm: List[torch.Tensor],
         queries0: torch.Tensor,
         image_size: Tuple[int, int],
+        view_valid: Optional[List[torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         """Temporal forward over T frames with query momentum.
 
-        Args:
-            view_points_2d_t: list over views, each is list over T of (K, 2)
-                OR list over T of list over views — we use [view][time]
-            view_features_t: same structure, features (K, dino_dim)
-            view_K: list over views of (3,3)  [static]
-            view_w2c_norm: list over views of (4,4) [static]
-            queries0: (M, 3) initial queries in normalized space
-            image_size: (W, H)
-        Returns:
-            points_3d: (T, M, 3)
-            vis_logits: (T, M)
-            attn_lists: list over T of list over views
+        view_valid: optional list over views of (T, M) validity.
         """
         n_views = len(view_K)
         T = len(view_points_2d_t[0])
@@ -506,18 +618,30 @@ class LAPA(nn.Module):
         all_vis = []
         all_attn = []
         all_corr = []
+        all_dlt = []
+        all_vw = []
 
         for t in range(T):
             pts_t = [view_points_2d_t[a][t] for a in range(n_views)]
             feats_t = [view_features_t[a][t] for a in range(n_views)]
+            valid_t = None
+            if view_valid is not None:
+                valid_t = [view_valid[a][t] for a in range(n_views)]
             out = self.forward_frame(
-                pts_t, feats_t, view_K, view_w2c_norm, queries, image_size
+                pts_t,
+                feats_t,
+                view_K,
+                view_w2c_norm,
+                queries,
+                image_size,
+                view_valid=valid_t,
             )
             all_pts.append(out["points_3d"])
             all_vis.append(out["vis_logit"])
             all_attn.append(out["attn_list"])
             all_corr.append(out["corr"])
-            # Momentum update (eq 14): q^{t+1} = α q^t + (1-α) p^{3D,t}
+            all_dlt.append(out["p_dlt"])
+            all_vw.append(out["view_w"])
             with torch.no_grad():
                 queries = (
                     self.query_momentum * queries
@@ -525,10 +649,12 @@ class LAPA(nn.Module):
                 )
 
         return {
-            "points_3d": torch.stack(all_pts, dim=0),  # (T, M, 3)
-            "vis_logits": torch.stack(all_vis, dim=0),  # (T, M)
+            "points_3d": torch.stack(all_pts, dim=0),
+            "vis_logits": torch.stack(all_vis, dim=0),
             "attn_lists": all_attn,
             "corr_lists": all_corr,
+            "p_dlt": torch.stack(all_dlt, dim=0),
+            "view_w": torch.stack(all_vw, dim=0),  # (T, V, M)
             "final_queries": queries,
         }
 
@@ -558,13 +684,12 @@ if __name__ == "__main__":
     model = model.to(device)
     V = 3
     T = 4
-    K = 8
     M = 5
     view_pts = [
-        [torch.rand(K, 2) * 640 for _ in range(T)] for _ in range(V)
+        [torch.rand(M, 2) * 640 for _ in range(T)] for _ in range(V)
     ]
     view_feats = [
-        [torch.randn(K, 768) for _ in range(T)] for _ in range(V)
+        [torch.randn(M, 768) for _ in range(T)] for _ in range(V)
     ]
     view_K = [
         torch.tensor([[500.0, 0, 320.0], [0, 500.0, 180.0], [0, 0, 1.0]])

@@ -19,7 +19,7 @@ for i in 0 1 2 3; do
   OUT="checkpoints/lapa_joint_mgpu/run_seed${SEED}"
   mkdir -p "$OUT"
   echo "Launching joint seed=$SEED on physical GPU $GPU -> $OUT"
-  CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$GPU "$PY" train_lapa.py \
+  CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$GPU nohup "$PY" train_lapa.py \
       --dataset joint \
       --device cuda:0 \
       --output_dir "$OUT" \

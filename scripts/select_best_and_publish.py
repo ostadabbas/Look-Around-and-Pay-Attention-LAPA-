@@ -30,7 +30,7 @@ import torch
 
 
 def find_best_run(runs_dir: Path) -> Path:
-    best_path, best_recon = None, float("inf")
+    best_path, best_score = None, None  # higher APD wins; else lower recon
     for run in sorted(runs_dir.glob("run_seed*")):
         ckpt_path = run / "best.pt"
         if not ckpt_path.exists():
@@ -38,20 +38,28 @@ def find_best_run(runs_dir: Path) -> Path:
         if not ckpt_path.exists():
             continue
         ckpt = torch.load(ckpt_path, map_location="cpu")
+        apd = ckpt.get("best_apd", None)
         recon = float(ckpt.get("best_recon", 1e9))
         hist = run / "history.json"
         if hist.exists():
             rows = json.loads(hist.read_text())
-            vals = [r.get("val_l_recon") for r in rows if r.get("val_l_recon") is not None]
-            if vals:
-                recon = min(vals)
-        print(f"  {run.name}: recon={recon:.4f} epoch={ckpt.get('epoch')}")
-        if recon < best_recon:
-            best_recon = recon
+            apds = [r.get("val_apd") for r in rows if r.get("val_apd") is not None]
+            recons = [r.get("val_l_recon") for r in rows if r.get("val_l_recon") is not None]
+            if apds:
+                apd = max(apds)
+            if recons:
+                recon = min(recons)
+        print(f"  {run.name}: apd={apd} recon={recon:.4f} epoch={ckpt.get('epoch')}")
+        if apd is not None:
+            score = (1, float(apd), -recon)  # prefer APD
+        else:
+            score = (0, -recon, 0.0)
+        if best_score is None or score > best_score:
+            best_score = score
             best_path = ckpt_path
     if best_path is None:
         raise RuntimeError(f"No checkpoints found under {runs_dir}")
-    print(f"Selected {best_path} (val_recon={best_recon:.4f})")
+    print(f"Selected {best_path} (score={best_score})")
     return best_path
 
 

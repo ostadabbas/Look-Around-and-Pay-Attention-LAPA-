@@ -118,6 +118,8 @@ def print_summary(summary: Dict, title: str = "TAPVid-3D-MC Evaluation") -> None
     print(f"3D-AJ:        {summary['AJ3D']:.2f}")
     print(f"2D-AJ:        {summary['AJ2D']:.2f}")
     print(f"OA const-vis: {summary['OA_const_vis']:.2f}  (always-visible baseline)")
+    if "MPJPE_m" in summary:
+        print(f"MPJPE (m):    {summary['MPJPE_m']:.4f}")
     print(f"(n={summary['n_samples']})")
 
 

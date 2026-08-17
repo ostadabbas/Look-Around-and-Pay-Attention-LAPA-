@@ -26,7 +26,7 @@ class PointOdysseyMCDataset(Dataset):
         num_frames: int = 24,
         max_points: int = 64,
         scenes: Optional[Sequence[str]] = None,
-        use_gt_tracks: bool = True,
+        use_gt_tracks: bool = False,
     ):
         self.mc_dir = Path(mc_dir)
         self.feature_dir = Path(feature_dir)
@@ -163,12 +163,20 @@ class PointOdysseyMCDataset(Dataset):
                 if key_2d not in f:
                     key_2d = "tracks_2d"
                 tracks_2d = np.asarray(f[key_2d], dtype=np.float32)
+                vis_ct = None
+                if (not self.use_gt_tracks) and "visibility_tracker" in f:
+                    vis_ct = np.asarray(f["visibility_tracker"], dtype=bool)
                 feats = np.asarray(f["features"], dtype=np.float16)
                 image_size = (int(f.attrs["W"]), int(f.attrs["H"]))
 
             # Same identities across views (canonical / shared world tracks)
             sel = point_idx
             sel = sel[sel < tracks_2d.shape[1]]
+            if vis_ct is not None:
+                vis_v = vis_v.copy()
+                vis_v[:, : len(sel)] = vis_v[:, : len(sel)] & vis_ct[np.ix_(frame_idx, sel)]
+                vis_v[0] = valid[0] & ib[0] & visible.numpy()[0]
+            visible_per_view[-1] = torch.from_numpy(vis_v).bool()
             pts_list, feat_list = [], []
             for t in frame_idx:
                 uv_t = tracks_2d[t, sel].astype(np.float32)

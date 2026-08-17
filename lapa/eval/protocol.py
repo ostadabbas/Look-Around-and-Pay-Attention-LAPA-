@@ -148,6 +148,13 @@ def score_tracks(
         order="n t",
     )
 
+    vis = np.asarray(gt_visible, dtype=bool)
+    err = np.linalg.norm(
+        np.asarray(pred_world, dtype=np.float64) - np.asarray(gt_world, dtype=np.float64),
+        axis=-1,
+    )
+    mpjpe_m = float((err * vis).sum() / max(float(vis.sum()), 1.0))
+
     return {
         "APD": float(np.mean(m3["average_pts_within_thresh"])) * 100.0,
         "OA": float(np.mean(m3["occlusion_accuracy"])) * 100.0,
@@ -155,13 +162,14 @@ def score_tracks(
         "AJ2D": float(m2["AJ2D"]),
         "OA_const_vis": float(np.mean(m_cv["occlusion_accuracy"])) * 100.0,
         "vis_frac": float(gt_visible.mean()) * 100.0,
+        "MPJPE_m": mpjpe_m,
     }
 
 
 def summarize(samples: Sequence[Dict]) -> Dict:
     if not samples:
         raise RuntimeError("No metrics computed")
-    keys = ("APD", "OA", "AJ3D", "AJ2D", "OA_const_vis")
+    keys = ("APD", "OA", "AJ3D", "AJ2D", "OA_const_vis", "MPJPE_m")
     out = {k: float(np.mean([s[k] for s in samples])) for k in keys}
     out["n_samples"] = len(samples)
     out["per_sample"] = list(samples)

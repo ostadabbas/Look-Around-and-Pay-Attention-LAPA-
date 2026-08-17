@@ -48,7 +48,7 @@ class TAPVid3DMCDataset(Dataset):
         num_frames: int = 24,
         max_points: int = 64,
         scenes: Optional[Sequence[str]] = None,
-        use_gt_tracks: bool = True,
+        use_gt_tracks: bool = False,
     ):
         self.mc_dir = Path(mc_dir)
         self.feature_dir = Path(feature_dir)

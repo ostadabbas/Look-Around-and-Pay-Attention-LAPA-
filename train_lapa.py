@@ -117,7 +117,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, max_steps=None)
 @torch.no_grad()
 def evaluate(model, loader, criterion, device, max_steps=50):
     model.eval()
-    meters = {"loss": 0.0, "l_recon": 0.0, "l_proj": 0.0, "n": 0, "mpjpe": 0.0, "apd": 0.0}
+    meters = {"loss": 0.0, "l_recon": 0.0, "l_proj": 0.0, "n": 0, "mpjpe": 0.0, "apd": 0.0, "mpjpe_m": 0.0}
     for step, batch in enumerate(loader):
         if step >= max_steps:
             break
@@ -199,8 +199,9 @@ def evaluate(model, loader, criterion, device, max_steps=50):
                 image_size=image_size,
             )
             meters["apd"] += m["APD"]
-        except Exception:
-            pass
+            meters["mpjpe_m"] += m.get("MPJPE_m", 0.0)
+        except Exception as e:
+            print(f"val score_tracks failed: {type(e).__name__}: {e}")
 
     n = max(meters["n"], 1)
     return {k: meters[k] / n for k in meters if k != "n"}
@@ -415,6 +416,7 @@ def main():
             f"train_loss={train_stats['loss']:.4f} recon={train_stats['l_recon']:.4f}  "
             f"val_recon={val_stats.get('l_recon', float('nan')):.4f}  "
             f"val_apd={val_stats.get('apd', float('nan')):.2f}  "
+            f"val_mpjpe_m={val_stats.get('mpjpe_m', float('nan')):.4f}  "
             f"val_mpjpe={val_stats.get('mpjpe', float('nan')):.4f}"
         )
 

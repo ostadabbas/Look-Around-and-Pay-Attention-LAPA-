@@ -30,7 +30,7 @@ class JointMCDataset(Dataset):
         num_frames: int = 24,
         max_points: int = 64,
         tapvid_prob: float = 0.5,
-        use_gt_tracks: bool = True,
+        use_gt_tracks: bool = False,
         scenes: Optional[Sequence[str]] = None,
     ):
         self.tapvid_prob = float(tapvid_prob)

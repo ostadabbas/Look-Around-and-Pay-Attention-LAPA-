@@ -150,7 +150,61 @@ def run_cotracker(
     vis = pred_visibility[0].cpu().numpy()
     if vis.dtype != np.bool_:
         vis = vis > vis_threshold
+    del video, q, pred_tracks, pred_visibility
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return tracks, vis.astype(bool)
+
+
+def run_cotracker_chunked(
+    frames_rgb: np.ndarray,
+    queries_xyt: np.ndarray,
+    device: torch.device,
+    model=None,
+    window: int = 64,
+    vis_threshold: float = 0.3,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """CoTracker on long videos by sliding windows (needed for PointOdyssey)."""
+    if model is None:
+        model = get_cotracker(device)
+    T = int(frames_rgb.shape[0])
+    N = int(queries_xyt.shape[0])
+    tracks = np.zeros((T, N, 2), dtype=np.float32)
+    vis = np.zeros((T, N), dtype=bool)
+    query_t = np.clip(queries_xyt[:, 2].astype(np.int32), 0, T - 1)
+    query_xy = queries_xyt[:, :2].astype(np.float32).copy()
+    for i in range(N):
+        tracks[query_t[i], i] = query_xy[i]
+        vis[query_t[i], i] = True
+
+    t0 = 0
+    while t0 < T:
+        t1 = min(T, t0 + window)
+        q = np.zeros((N, 3), dtype=np.float32)
+        for i in range(N):
+            tq = int(query_t[i])
+            if tq >= t1:
+                q[i] = (query_xy[i, 0], query_xy[i, 1], 0.0)
+            elif tq >= t0:
+                q[i] = (query_xy[i, 0], query_xy[i, 1], float(tq - t0))
+            else:
+                src = t0 - 1 if t0 > 0 else t0
+                q[i] = (tracks[src, i, 0], tracks[src, i, 1], 0.0)
+        tr, v = run_cotracker(
+            frames_rgb[t0:t1], q, device, model=model, vis_threshold=vis_threshold
+        )
+        for i in range(N):
+            tq = int(query_t[i])
+            if tq >= t1:
+                continue
+            start = max(0, tq - t0)
+            tracks[t0 + start : t1, i] = tr[start:, i]
+            vis[t0 + start : t1, i] = v[start:, i]
+            if tq > t0:
+                tracks[t0:tq, i] = query_xy[i] if t0 == 0 else tracks[t0:tq, i]
+                vis[t0:tq, i] = False
+        t0 = t1
+    return tracks, vis
 
 
 def process_clip(
